@@ -1,0 +1,127 @@
+---
+title: 'Peer-graded Assignment: Prediction Assignment Writeup'
+author: "IliasS"
+date: "9/12/2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Introdaction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Scope of the project.
+
+The goal of the project is the creation of a prediction model that can predict the manner in which the exercise had been done based on some variables. In the specific project we want to predict the "classe" variable. 
+
+##Loaing the data
+
+The data that used for this project can found to the following links:
+
+1 Training data https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+2 Test data https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The following chunk contains the code for the data loading.
+
+```{r data}
+fileUrltrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileUrltest<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if(!file.exists("training.csv")){
+   download.file(fileUrltrain,destfile="training.csv",method="curl")}
+if(!file.exists("testing.csv")){
+   download.file(fileUrltest,destfile="testing.csv",method="curl")}
+training <-read.csv("training.csv")
+testing <-read.csv("testing.csv")
+```
+#Package loading
+The following package are necessary for this project
+```{r package}
+library(caret)
+library(ggplot2)
+library(gridExtra)
+library(randomForest)
+library(corrplot)
+```
+
+##Clearing data from empty and NA values.
+
+Observing the training data set we notice many observations to be empty or NA. In the following chunk we will remove the variables which have  empty or NA values for above the 97% of the observations In addition we will use the NearZeroVariance function to remove any variable which have a dominant unique value . We will perform the same cleaning and for the testing data set.
+
+```{r clearing data}
+col.NA<-apply(training,2,function(x)sum(is.na(x)/length(x)))*100
+training<-training[,!col.NA>97]
+col.emp<-apply(training,2,function(x)sum(x=="")/length(x))*100
+training<-training[,!col.emp>97]
+nzv<-nearZeroVar(training,saveMetrics = TRUE)
+training<-training[,!nzv$nzv]
+col.NA<-apply(testing,2,function(x)sum(is.na(x)/length(x)))*100
+testing<-testing[,!col.NA>97]
+col.emp<-apply(testing,2,function(x)sum(x=="")/length(x))*100
+testing<-testing[,!col.emp>97]
+nzv<-nearZeroVar(testing,saveMetrics = TRUE)
+testing<-testing[,!nzv$nzv]
+```
+
+##Plot data 
+The first two variables are definitely identification variables.Although For the time variables we are interested to see their relation with the way that the exercises performed(classe). For this reason we will observe the following plot.  
+```{r plot}
+p1<-qplot(raw_timestamp_part_1,classe,data = training,colour=user_name)
+p2<-qplot(raw_timestamp_part_2,classe,data = training,colour=user_name)
+p3<-qplot(cvtd_timestamp,classe,data = training,colour=user_name)
+grid.arrange(p1,p2,p3)
+```
+
+From the plot we can infer that time variables must not be used in our model. They are used to inform as when the exercise performed and they will give information irrelevant with the way the exercise was performed. For this reason they will be removed from the data sets together with the X and user_name variables.
+```{r clearing data 2}
+training<-training[,-(1:5)]
+testing<-testing[,-(1:5)]
+```
+
+## Cross validation
+
+For the cross validation of the model we will split the training data into two separate data sets. One data set named trainingCV will be used for the model selection. The other portion of the training data set will be renamed testingCV and will be used for the validation and the selection of the models. The trainingCV will contain 70% of randomly chosen observations from the training data set and the testingCV will include 30% of randomly chosen observations from the training data set.
+
+The following chunk contain the code for the data split
+
+```{r cross validation}
+set.seed(1)
+inTrain = createDataPartition(training$classe, p = 0.7)[[1]]
+trainingCV<-training[inTrain,]
+testingCV<-training[-inTrain,]
+```
+
+##Checking for corelated variables
+We will use the corrplot function to check the correlation between the variables
+```{r correlation plot,fig.height=8,fig.width=8}
+corrplot(cor(trainingCV[,-54]),method = "circle",order = "FPC",tl.cex = .5)
+```
+
+Although there are some variables with high correlation between them, the majority are less correlated for this reason we will not use Principal Component Analysis PCA as preprocessing technique.
+
+##Model selection
+We will fit two models in trainingCV data and we will calculate the out of sample error based on the prediction for the testingCV data set.
+We will start with tree selection model.
+```{r fit1 tree}
+set.seed(5)
+fitrpart<-train(classe~.,method="rpart",trainingCV)
+predictrpart<-predict(fitrpart,testingCV)
+confusionMatrix(predictrpart,testingCV$classe)
+
+```
+
+With out of sample error 0.5089 the model is rejected as inaccurate.
+
+The second model to be tested is random forest. Again we will cross validate the model error rate with the testingCV data set.
+```{r rf}
+set.seed(3)
+fitrf<-randomForest(classe~.,trainingCV)
+predictrf<-predict(fitrf,testingCV)
+confusionMatrix(predictrf,testingCV$classe)
+```
+
+With out of sample error only 0,002 the model is chosen for the final prediction on the testing data set. With the following chunk we will predict the 20 classe values for the testing data sets
+```{r final prediction}
+predict(fitrf,testing)
+```
